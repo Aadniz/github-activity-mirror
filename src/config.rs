@@ -66,7 +66,7 @@ impl ServiceType {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ServiceConfig {
     pub service_type: ServiceType,
-    username: String,
+    pub username: String,
     pub url: Url,
     pub token: String,
     #[serde(skip)] // This field won't be loaded from config

@@ -5,6 +5,7 @@ use tokio;
 
 use config::Config;
 
+pub mod activity;
 mod config;
 mod github;
 mod services;

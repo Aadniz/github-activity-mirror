@@ -2,10 +2,43 @@ use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use url::Url;
 
+// https://github.com/go-gitea/gitea/blob/921d3a394de244de83650fa5dcc4866b085cf72b/models/activities/action.go#L66
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OpType {
+    CreateRepo,
+    RenameRepo,
+    StarRepo,
+    WatchRepo,
+    CommitRepo,
+    CreateIssue,
+    CreatePullRequest,
+    TransferRepo,
+    PushTag,
+    CommentIssue,
+    MergePullRequest,
+    CloseIssue,
+    ReopenIssue,
+    ClosePullRequest,
+    ReopenPullRequest,
+    DeleteTag,
+    DeleteBranch,
+    MirrorSyncPush,
+    MirrorSyncCreate,
+    MirrorSyncDelete,
+    ApprovePullRequest,
+    RejectPullRequest,
+    CommentPull,
+    PublishRelease,
+    PullReviewDismissed,
+    PullRequestReadyForReview,
+    AutoMergePullRequest,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Activity {
     pub id: u64,
-    pub op_type: String,
+    pub op_type: OpType,
     pub repo: Repository,
     pub created: DateTime<chrono::FixedOffset>,
     pub content: ActivityContent,
