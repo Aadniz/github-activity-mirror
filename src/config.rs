@@ -65,7 +65,7 @@ impl ServiceType {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ServiceConfig {
-    pub service_type: ServiceType,
+    service_type: ServiceType,
     pub username: String,
     pub url: Url,
     pub token: String,

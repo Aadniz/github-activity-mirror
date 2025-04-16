@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use url::Url;
 
 // https://github.com/go-gitea/gitea/blob/921d3a394de244de83650fa5dcc4866b085cf72b/models/activities/action.go#L66
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum OpType {
     CreateRepo,
@@ -37,16 +37,15 @@ pub enum OpType {
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Activity {
-    pub id: u64,
     pub op_type: OpType,
     pub repo: Repository,
-    pub created: DateTime<chrono::FixedOffset>,
+    pub date: DateTime<chrono::FixedOffset>,
     pub content: ActivityContent,
+    pub username: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Repository {
-    pub id: u64,
     pub name: String,
     pub full_name: String,
     pub html_url: Url,
@@ -54,17 +53,14 @@ pub struct Repository {
     pub private: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(untagged)]
 pub enum ActivityContent {
-    Commit {
-        commits: Vec<Commit>,
-        compare_url: String,
-    },
+    Commit(Commit),
     // Other activity types...
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 pub struct Commit {
     pub sha1: String,
     pub message: String,

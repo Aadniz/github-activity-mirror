@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::io::prelude::*;
 
@@ -98,7 +100,7 @@ pub struct GiteaRepo {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 #[serde(untagged)]
-pub enum GiteaContent {
+enum GiteaContent {
     Commit(CommitContent),
     String(String),
     None,
@@ -135,7 +137,7 @@ where
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 struct CommitInfoShort {
     sha1: String,
@@ -207,52 +209,73 @@ struct GiteaActivity {
 pub struct GiteaClient {
     base_url: Url,
     username: String,
-    token: Option<String>,
+    _token: Option<String>,
     client: reqwest::Client,
 }
 
-impl From<GiteaActivity> for Option<activity::Activity> {
-    fn from(gitea_activity: GiteaActivity) -> Option<activity::Activity> {
-        let content = match gitea_activity.content {
-            GiteaContent::Commit(commit_content) => {
-                let commits = commit_content
-                    .commits
-                    .into_iter()
-                    .map(|c| activity::Commit {
-                        sha1: c.sha1,
-                        message: c.message,
-                        author_email: c.author_email,
-                        author_name: c.author_name,
-                        timestamp: c.timestamp,
-                    })
-                    .collect();
+fn commit_info_short_to_activity(
+    commit_info_short: CommitInfoShort,
+    gitea_repo: &GiteaRepo,
+) -> activity::Activity {
+    let repo = activity::Repository {
+        name: gitea_repo.name.clone(),
+        full_name: gitea_repo.full_name.clone(),
+        html_url: gitea_repo.html_url.clone(),
+        clone_url: gitea_repo.clone_url.clone(),
+        private: gitea_repo.private.clone(),
+    };
 
-                activity::ActivityContent::Commit {
-                    commits,
-                    compare_url: commit_content.compare_u_r_l,
-                }
-            }
-            // Skip non-commit activities for now
-            _ => return None,
-        };
+    let content = activity::ActivityContent::Commit(activity::Commit {
+        sha1: commit_info_short.sha1,
+        message: commit_info_short.message,
+        author_email: commit_info_short.author_email,
+        author_name: commit_info_short.author_name.clone(),
+        timestamp: commit_info_short.timestamp,
+    });
 
-        Some(activity::Activity {
-            id: gitea_activity.id,
-            op_type: gitea_activity.op_type,
-            repo: activity::Repository {
-                id: gitea_activity.repo.id,
-                name: gitea_activity.repo.name,
-                full_name: gitea_activity.repo.full_name,
-                html_url: gitea_activity.repo.html_url,
-                clone_url: gitea_activity.repo.clone_url,
-                private: gitea_activity.repo.private,
-            },
-            created: gitea_activity.created,
-            content,
-        })
+    activity::Activity {
+        op_type: activity::OpType::CommitRepo,
+        repo,
+        date: commit_info_short.timestamp,
+        content,
+        username: commit_info_short.author_name,
     }
 }
 
+fn commit_to_activity(commit: &CommitInfo, repo: &GiteaRepo) -> activity::Activity {
+    let repo = activity::Repository {
+        name: repo.name.clone(),
+        full_name: repo.full_name.clone(),
+        html_url: repo.html_url.clone(),
+        clone_url: repo.clone_url.clone(),
+        private: repo.private,
+    };
+
+    let (author_email, author_name) = commit
+        .author
+        .as_ref()
+        .and_then(|a| Some((a.email.clone(), a.username.clone())))
+        .unwrap_or((
+            commit.commit.author.email.clone(),
+            commit.commit.author.name.clone(),
+        ));
+
+    let content = activity::ActivityContent::Commit(activity::Commit {
+        sha1: commit.sha.clone(),
+        message: commit.commit.message.clone(),
+        author_email: author_email.to_string(),
+        author_name: author_name.to_string(),
+        timestamp: commit.created,
+    });
+
+    activity::Activity {
+        op_type: activity::OpType::CommitRepo,
+        repo,
+        date: commit.created,
+        content,
+        username: author_name,
+    }
+}
 impl GiteaClient {
     pub fn new(config: &ServiceConfig) -> anyhow::Result<Self> {
         let mut base_url = config.url.clone();
@@ -275,7 +298,7 @@ impl GiteaClient {
             client,
             username: config.username.clone(),
             base_url,
-            token: Some(config.token.clone()),
+            _token: Some(config.token.clone()),
         })
     }
 }
@@ -284,7 +307,7 @@ impl GiteaClient {
 impl ServiceClient for GiteaClient {
     async fn get_activities(&self) -> anyhow::Result<Vec<activity::Activity>> {
         println!("Fetching activities from {}", self.base_url);
-        let mut all_activities = Vec::new();
+        let mut all_activities: HashSet<activity::Activity> = HashSet::new();
         let mut page = 1;
         let limit = 50;
         loop {
@@ -293,7 +316,7 @@ impl ServiceClient for GiteaClient {
                 self.base_url, self.username, page, limit
             );
 
-            let mut result: Vec<GiteaActivity> = self
+            let result: Vec<GiteaActivity> = self
                 .client
                 .get(&url)
                 .send()
@@ -307,107 +330,91 @@ impl ServiceClient for GiteaClient {
                 break;
             }
 
-            for activity in &mut result {
-                if let GiteaContent::Commit(c) = &mut activity.content {
-                    if c.len > c.commits.len() as u64 {
-                        let last_commit = c.commits.last().unwrap();
-                        let repo_name = activity.repo.full_name.clone();
-                        let sha = last_commit.sha1.clone();
-                        let count = c.len - c.commits.len() as u64;
-                        let date = last_commit.timestamp;
+            for activity in result {
+                if let GiteaContent::Commit(c) = activity.content {
+                    let mut count: i64 = (c.len as i64) - (c.commits.len() as i64);
 
-                        match self.get_commits(&repo_name, &sha, count, date).await {
-                            Ok(all_commits) => {
-                                c.commits.extend(all_commits);
+                    let last_sha1 = c.commits.last().and_then(|lc| Some(lc.sha1.clone()));
+                    all_activities.extend(
+                        c.commits
+                            .into_iter()
+                            .map(|co| commit_info_short_to_activity(co, &activity.repo))
+                            .collect::<HashSet<activity::Activity>>(),
+                    );
+
+                    // Gitea users/username/activities only show maximum of 4 activities, so we dig further to get the rest
+                    if count > 0 {
+                        let mut page2 = 1;
+                        // Super slow otherwise
+                        let limit2 = count * 2;
+
+                        while count > 0 {
+                            let url = format!(
+                                "{}/repos/{}/commits?sha={}&page={}&limit={}",
+                                self.base_url,
+                                activity.repo.full_name,
+                                last_sha1.clone().unwrap(),
+                                page2,
+                                limit2
+                            );
+
+                            let result: Vec<CommitInfo> = self
+                                .client
+                                .get(&url)
+                                .send()
+                                .await?
+                                .error_for_status()?
+                                .json()
+                                .await?;
+
+                            // Gitea API will return an empty array if the limit + page goes beyond the activity
+                            if result.is_empty() {
+                                break;
                             }
-                            Err(e) => {
-                                eprintln!("{e}");
+
+                            for commit in result {
+                                print!(".");
+                                io::stdout().flush().ok().expect("Could not flush stdout");
+
+                                if 0 >= count {
+                                    break;
+                                }
+
+                                let new_activity = commit_to_activity(&commit, &activity.repo);
+
+                                if !all_activities.contains(&new_activity)
+                                    && new_activity.username.to_lowercase() == self.username
+                                {
+                                    all_activities.insert(new_activity);
+                                    count -= 1;
+                                }
                             }
+
+                            page2 += 1;
                         }
                     }
                 }
             }
 
-            all_activities.extend(result.into_iter().filter_map(|a| a.into()));
             page += 1;
             print!(".");
             io::stdout().flush().ok().expect("Could not flush stdout");
         }
 
-        Ok(all_activities)
+        Ok(all_activities.into_iter().collect())
     }
 }
 
-impl GiteaClient {
-    async fn get_commits(
-        &self,
-        repo_path: &String,
-        sha1: &String,
-        amount: u64,
-        date: DateTime<FixedOffset>,
-    ) -> anyhow::Result<Vec<CommitInfoShort>> {
-        let mut page = 1;
-        // Super slow otherwise
-        let limit = amount * 2;
+impl Hash for activity::Activity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.op_type.hash(state);
+        self.content.hash(state);
+    }
+}
 
-        let mut results = vec![];
-
-        loop {
-            let url = format!(
-                "{}/repos/{}/commits?sha={}&page={}&limit={}",
-                self.base_url, repo_path, sha1, page, limit
-            );
-
-            let result: Vec<CommitInfo> = self
-                .client
-                .get(&url)
-                .send()
-                .await?
-                .error_for_status()?
-                .json()
-                .await?;
-
-            // Gitea API will return an empty array if the limit + page goes beyond the activity
-            if result.is_empty() {
-                break;
-            }
-
-            for commit in result {
-                if sha1 == &commit.sha {
-                    continue;
-                }
-
-                print!(".");
-                io::stdout().flush().ok().expect("Could not flush stdout");
-
-                if commit.created != date || results.len() as u64 >= amount {
-                    return Ok(results);
-                }
-
-                let (author_email, author_name) = commit
-                    .author
-                    .and_then(|a| Some((a.email, a.full_name)))
-                    .unwrap_or((commit.commit.author.email, commit.commit.author.name));
-                let (committer_email, committer_name) = commit
-                    .committer
-                    .and_then(|a| Some((a.email, a.full_name)))
-                    .unwrap_or((commit.commit.committer.email, commit.commit.committer.name));
-
-                let commit_info = CommitInfoShort {
-                    sha1: commit.sha,
-                    message: commit.commit.message,
-                    author_email,
-                    author_name,
-                    committer_email,
-                    committer_name,
-                    timestamp: commit.created,
-                };
-                results.push(commit_info);
-            }
-
-            page += 1;
-        }
-
-        Ok(results)
+impl Eq for activity::Activity {}
+impl PartialEq for activity::Activity {
+    fn eq(&self, other: &Self) -> bool {
+        self.op_type == other.op_type && self.content == other.content
     }
 }
