@@ -1,16 +1,15 @@
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-use std::io;
-use std::io::prelude::*;
-
-use crate::activity;
-use crate::config::ServiceConfig;
 use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset};
 use reqwest;
 use serde;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::io::{self, Write};
 use url::Url;
+
+use crate::activity;
+use crate::config::ServiceConfig;
 
 use super::ServiceClient;
 
@@ -205,6 +204,53 @@ struct GiteaActivity {
     created: DateTime<FixedOffset>,
 }
 
+impl From<CommitInfo> for activity::Activity {
+    fn from(commit: CommitInfo) -> activity::Activity {
+        let (author_email, author_name) = commit
+            .author
+            .as_ref()
+            .and_then(|a| Some((a.email.clone(), a.username.clone())))
+            .unwrap_or((
+                commit.commit.author.email.clone(),
+                commit.commit.author.name.clone(),
+            ));
+
+        let content = activity::ActivityContent::Commit(activity::Commit {
+            sha1: commit.sha.clone(),
+            message: commit.commit.message.clone(),
+            author_email: author_email.to_string(),
+            author_name: author_name.to_string(),
+            timestamp: commit.created,
+        });
+
+        activity::Activity {
+            op_type: activity::OpType::CommitRepo,
+            date: commit.created,
+            content,
+            username: author_name,
+        }
+    }
+}
+
+impl From<CommitInfoShort> for activity::Activity {
+    fn from(commit_info_short: CommitInfoShort) -> activity::Activity {
+        let content = activity::ActivityContent::Commit(activity::Commit {
+            sha1: commit_info_short.sha1,
+            message: commit_info_short.message,
+            author_email: commit_info_short.author_email,
+            author_name: commit_info_short.author_name.clone(),
+            timestamp: commit_info_short.timestamp,
+        });
+
+        activity::Activity {
+            op_type: activity::OpType::CommitRepo,
+            date: commit_info_short.timestamp,
+            content,
+            username: commit_info_short.author_name,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct GiteaClient {
     base_url: Url,
@@ -213,69 +259,6 @@ pub struct GiteaClient {
     client: reqwest::Client,
 }
 
-fn commit_info_short_to_activity(
-    commit_info_short: CommitInfoShort,
-    gitea_repo: &GiteaRepo,
-) -> activity::Activity {
-    let repo = activity::Repository {
-        name: gitea_repo.name.clone(),
-        full_name: gitea_repo.full_name.clone(),
-        html_url: gitea_repo.html_url.clone(),
-        clone_url: gitea_repo.clone_url.clone(),
-        private: gitea_repo.private.clone(),
-    };
-
-    let content = activity::ActivityContent::Commit(activity::Commit {
-        sha1: commit_info_short.sha1,
-        message: commit_info_short.message,
-        author_email: commit_info_short.author_email,
-        author_name: commit_info_short.author_name.clone(),
-        timestamp: commit_info_short.timestamp,
-    });
-
-    activity::Activity {
-        op_type: activity::OpType::CommitRepo,
-        repo,
-        date: commit_info_short.timestamp,
-        content,
-        username: commit_info_short.author_name,
-    }
-}
-
-fn commit_to_activity(commit: &CommitInfo, repo: &GiteaRepo) -> activity::Activity {
-    let repo = activity::Repository {
-        name: repo.name.clone(),
-        full_name: repo.full_name.clone(),
-        html_url: repo.html_url.clone(),
-        clone_url: repo.clone_url.clone(),
-        private: repo.private,
-    };
-
-    let (author_email, author_name) = commit
-        .author
-        .as_ref()
-        .and_then(|a| Some((a.email.clone(), a.username.clone())))
-        .unwrap_or((
-            commit.commit.author.email.clone(),
-            commit.commit.author.name.clone(),
-        ));
-
-    let content = activity::ActivityContent::Commit(activity::Commit {
-        sha1: commit.sha.clone(),
-        message: commit.commit.message.clone(),
-        author_email: author_email.to_string(),
-        author_name: author_name.to_string(),
-        timestamp: commit.created,
-    });
-
-    activity::Activity {
-        op_type: activity::OpType::CommitRepo,
-        repo,
-        date: commit.created,
-        content,
-        username: author_name,
-    }
-}
 impl GiteaClient {
     pub fn new(config: &ServiceConfig) -> anyhow::Result<Self> {
         let mut base_url = config.url.clone();
@@ -301,13 +284,27 @@ impl GiteaClient {
             _token: Some(config.token.clone()),
         })
     }
+
+    fn to_activity_repo(&self, gitea_repo: &GiteaRepo) -> activity::Repository {
+        activity::Repository {
+            owned_by_you: self.username.to_lowercase() == gitea_repo.owner.username.to_lowercase(),
+            owner: gitea_repo.owner.username.clone(),
+            name: gitea_repo.name.clone(),
+            full_name: gitea_repo.full_name.clone(),
+            html_url: gitea_repo.html_url.clone(),
+            clone_url: gitea_repo.clone_url.clone(),
+            private: gitea_repo.private,
+        }
+    }
 }
 
 #[async_trait]
 impl ServiceClient for GiteaClient {
-    async fn get_activities(&self) -> anyhow::Result<Vec<activity::Activity>> {
+    async fn get_repos(
+        &self,
+    ) -> anyhow::Result<HashMap<activity::Repository, HashSet<activity::Activity>>> {
         println!("Fetching activities from {}", self.base_url);
-        let mut all_activities: HashSet<activity::Activity> = HashSet::new();
+        let mut repos: HashMap<activity::Repository, HashSet<activity::Activity>> = HashMap::new();
         let mut page = 1;
         let limit = 50;
         loop {
@@ -331,16 +328,14 @@ impl ServiceClient for GiteaClient {
             }
 
             for activity in result {
+                let repo = self.to_activity_repo(&activity.repo);
+                let activities = repos.entry(repo).or_insert_with(HashSet::new);
+
                 if let GiteaContent::Commit(c) = activity.content {
                     let mut count: i64 = (c.len as i64) - (c.commits.len() as i64);
 
                     let last_sha1 = c.commits.last().and_then(|lc| Some(lc.sha1.clone()));
-                    all_activities.extend(
-                        c.commits
-                            .into_iter()
-                            .map(|co| commit_info_short_to_activity(co, &activity.repo))
-                            .collect::<HashSet<activity::Activity>>(),
-                    );
+                    activities.extend(c.commits.into_iter().map(|c| c.into()));
 
                     // Gitea users/username/activities only show maximum of 4 activities, so we dig further to get the rest
                     if count > 0 {
@@ -348,7 +343,7 @@ impl ServiceClient for GiteaClient {
                         // Super slow otherwise
                         let limit2 = count * 2;
 
-                        while count > 0 {
+                        'scroller: loop {
                             let url = format!(
                                 "{}/repos/{}/commits?sha={}&page={}&limit={}",
                                 self.base_url,
@@ -369,7 +364,10 @@ impl ServiceClient for GiteaClient {
 
                             // Gitea API will return an empty array if the limit + page goes beyond the activity
                             if result.is_empty() {
-                                break;
+                                // Should technically never land here
+                                print!("!");
+                                io::stdout().flush().ok().expect("Could not flush stdout");
+                                break 'scroller;
                             }
 
                             for commit in result {
@@ -377,15 +375,15 @@ impl ServiceClient for GiteaClient {
                                 io::stdout().flush().ok().expect("Could not flush stdout");
 
                                 if 0 >= count {
-                                    break;
+                                    break 'scroller;
                                 }
 
-                                let new_activity = commit_to_activity(&commit, &activity.repo);
+                                let activity: activity::Activity = commit.into();
 
-                                if !all_activities.contains(&new_activity)
-                                    && new_activity.username.to_lowercase() == self.username
+                                if !activities.contains(&activity)
+                                    && activity.username.to_lowercase() == self.username
                                 {
-                                    all_activities.insert(new_activity);
+                                    activities.insert(activity);
                                     count -= 1;
                                 }
                             }
@@ -401,7 +399,7 @@ impl ServiceClient for GiteaClient {
             io::stdout().flush().ok().expect("Could not flush stdout");
         }
 
-        Ok(all_activities.into_iter().collect())
+        Ok(repos)
     }
 }
 

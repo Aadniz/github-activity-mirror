@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fs, path::PathBuf};
 use toml;
 use url::Url;
@@ -79,10 +79,75 @@ impl ServiceConfig {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub enum RedactLevel {
+    Off,
+    PrivateRepos,
+    PrivateReposNoCrossLinking,
+    Encrypted,
+    Hashed,
+}
+
+impl Serialize for RedactLevel {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            RedactLevel::Off => serializer.serialize_u8(0),
+            RedactLevel::PrivateRepos => serializer.serialize_u8(1),
+            RedactLevel::PrivateReposNoCrossLinking => serializer.serialize_u8(2),
+            RedactLevel::Encrypted => serializer.serialize_u8(3),
+            RedactLevel::Hashed => serializer.serialize_u8(4),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RedactLevel {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = u8::deserialize(deserializer)?;
+        match value {
+            0 => Err(serde::de::Error::custom(
+                "Not implemented yet, only \"2\" (Hashed) is implemented",
+            )), // Ok(RedactLevel::Off),
+            1 => Err(serde::de::Error::custom(
+                "Not implemented yet, only \"2\" (Hashed) is implemented",
+            )), // Ok(RedactLevel::PrivateRepos),
+            2 => Err(serde::de::Error::custom(
+                "Not implemented yet, only \"2\" (Hashed) is implemented",
+            )), // Ok(RedactLevel::PrivateReposNoCrossLinking),
+            3 => Err(serde::de::Error::custom(
+                "Not implemented yet, only \"2\" (Hashed) is implemented",
+            )), // Ok(RedactLevel::Encrypted),
+            4 => Ok(RedactLevel::Hashed),
+            _ => Err(serde::de::Error::custom(
+                "Invalid redact level. Must be 0-4",
+            )),
+        }
+    }
+}
+
+impl Default for RedactLevel {
+    fn default() -> Self {
+        RedactLevel::PrivateRepos
+    }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct GithubConfig {
+    pub username: String,
+    pub token: String,
+    #[serde(default)]
+    pub redact_level: RedactLevel,
+}
+
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     pub services: Vec<ServiceConfig>,
-    pub github: github::GithubConfig,
+    pub github: GithubConfig,
 }
 
 impl Config {

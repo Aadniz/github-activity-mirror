@@ -38,14 +38,16 @@ pub enum OpType {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Activity {
     pub op_type: OpType,
-    pub repo: Repository,
     pub date: DateTime<chrono::FixedOffset>,
     pub content: ActivityContent,
     pub username: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Eq, Hash, PartialEq)]
 pub struct Repository {
+    // If it is owned under you, or if it is a repo under an organization or a friend
+    pub owned_by_you: bool,
+    pub owner: String,
     pub name: String,
     pub full_name: String,
     pub html_url: Url,

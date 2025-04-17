@@ -1,6 +1,9 @@
 use anyhow;
 use clap::Parser;
-use std::path::PathBuf;
+use std::{
+    collections::{HashMap, HashSet},
+    path::PathBuf,
+};
 use tokio;
 
 use config::Config;
@@ -24,18 +27,19 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     let config = Config::load(cli.path)?;
 
-    let mut activities = vec![];
+    let mut repos: HashMap<activity::Repository, HashSet<activity::Activity>> = HashMap::new();
 
     for service in config.services {
         if let Some(client) = &service.client {
-            let result = client.get_activities().await?;
-            activities.extend(result);
+            let result = client.get_repos().await?;
+            repos.extend(result);
         }
     }
 
-    config.github.sync(activities)?;
+    let github_client = github::GithubClient::new(config.github);
+    github_client.sync(repos).await?;
 
-    println!("{:?}", config.github);
+    println!(":3");
 
     Ok(())
 }
