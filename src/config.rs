@@ -64,7 +64,7 @@ impl ServiceType {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize)]
 pub struct ServiceConfig {
     service_type: ServiceType,
     pub username: String,
@@ -80,7 +80,7 @@ impl ServiceConfig {
     }
 }
 
-#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PushMethod {
     Http,
@@ -91,7 +91,7 @@ impl Default for PushMethod {
         PushMethod::Ssh
     }
 }
-#[derive(Debug, PartialEq, Clone)]
+#[derive(PartialEq, Clone)]
 pub enum RedactLevel {
     Off,
     PrivateRepos,
@@ -142,7 +142,7 @@ impl Default for RedactLevel {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct GitConfig {
     pub username: String,
     pub token: String,
@@ -153,7 +153,7 @@ pub struct GitConfig {
     pub push_method: PushMethod,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize)]
 pub struct Config {
     pub services: Vec<ServiceConfig>,
     pub github: GitConfig,

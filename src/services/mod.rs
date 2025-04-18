@@ -7,6 +7,6 @@ use crate::activity::{Activity, Repository};
 pub mod gitea;
 
 #[async_trait]
-pub trait ServiceClient: std::fmt::Debug + Send + Sync {
+pub trait ServiceClient: Send + Sync {
     async fn get_repos(&self) -> anyhow::Result<HashMap<Repository, HashSet<Activity>>>;
 }

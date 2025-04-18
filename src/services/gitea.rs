@@ -13,7 +13,7 @@ use crate::config::ServiceConfig;
 
 use super::ServiceClient;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct GiteaUser {
     pub id: u64,
     pub login: String,
@@ -39,7 +39,7 @@ pub struct GiteaUser {
     pub username: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct GiteaRepo {
     pub id: u64,
     pub owner: GiteaUser,
@@ -96,7 +96,7 @@ pub struct GiteaRepo {
     pub mirror_updated: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 #[serde(untagged)]
 enum GiteaContent {
@@ -105,7 +105,7 @@ enum GiteaContent {
     None,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 struct CommitContent {
     commits: Vec<CommitInfoShort>,
@@ -136,7 +136,7 @@ where
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 struct CommitInfoShort {
     sha1: String,
@@ -148,21 +148,21 @@ struct CommitInfoShort {
     timestamp: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct CommitInfoSummary {
     url: Url,
     sha: String,
     created: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct GiteaUserShort {
     name: String,
     email: String,
     date: DateTime<FixedOffset>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct CommitDetails {
     url: Url,
     author: GiteaUserShort,
@@ -172,7 +172,7 @@ struct CommitDetails {
     // verification: todo!("Unimportant"),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct CommitInfo {
     url: Url,
     sha: String,
@@ -186,7 +186,7 @@ struct CommitInfo {
     // stats: todo!("Unimportant"),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 struct GiteaActivity {
     id: u64,
     user_id: u64,
@@ -263,7 +263,6 @@ fn commit_info_short_to_activity(
     }
 }
 
-#[derive(Debug)]
 pub struct GiteaClient {
     api_url: Url,
     username: String,

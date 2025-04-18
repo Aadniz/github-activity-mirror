@@ -35,7 +35,7 @@ pub enum OpType {
     AutoMergePullRequest,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Activity {
     pub op_type: OpType,
     pub date: DateTime<chrono::FixedOffset>,
@@ -45,7 +45,7 @@ pub struct Activity {
     pub email: String,
 }
 
-#[derive(Debug, Deserialize, Serialize, Eq, Hash, PartialEq)]
+#[derive(Deserialize, Serialize, Eq, Hash, PartialEq)]
 pub struct Repository {
     // If it is owned under you, or if it is a repo under an organization or a friend
     pub owned_by_you: bool,
@@ -59,7 +59,7 @@ pub struct Repository {
     pub created_date: DateTime<chrono::FixedOffset>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ActivityContent {
     Commit(Commit),
@@ -73,7 +73,7 @@ impl ActivityContent {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Deserialize, Serialize)]
 pub struct Commit {
     pub sha1: String,
     pub message: String,

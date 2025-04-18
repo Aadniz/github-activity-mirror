@@ -40,7 +40,5 @@ async fn main() -> anyhow::Result<()> {
     let github_client = github::GithubClient::new(config.github).await;
     github_client.sync(repos).await?;
 
-    println!(":3");
-
     Ok(())
 }
