@@ -101,7 +101,7 @@ The levels go from 0 (public) to 4 (private + hashed), with a default of 1 (priv
 | 0            | No           | Full commit messages                         | Original commit message \n\n Mirrored from: https://v11.next.forgejo.org/username/my-repo/commit/1c7cf690f7a423d82f5f79b30fb28d0af24a47a1 |
 | 1            | Yes          | Full commit messages                         | Original commit message \n\n Mirrored from: https://v11.next.forgejo.org/username/my-repo/commit/1c7cf690f7a423d82f5f79b30fb28d0af24a47a1 |
 | 2            | Yes          | Full commit messages, excluding source links | Original commit message                                                                                                                   |
-| ~~3~~        | Yes          | Encrypted commit messages                    | <not implemented yet>                                                                                                                     |
+| ~~3~~        | Yes          | Encrypted commit messages                    | \<not implemented yet\>                                                                                                                     |
 | 4            | Yes          | Sha1 hashed commit messages                  | 7a4743cbbfe504dcb1a5091f592a403d619135e6                                                                                                  |
 
 
