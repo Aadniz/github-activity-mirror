@@ -8,7 +8,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
 use url::Url;
 
-use crate::activity;
+use crate::activity::{self, ActivityContent};
 use crate::config::ServiceConfig;
 
 use super::ServiceClient;
@@ -217,7 +217,7 @@ impl From<CommitInfo> for activity::Activity {
 
         let content = activity::ActivityContent::Commit(activity::Commit {
             sha1: commit.sha.clone(),
-            message: commit.commit.message.clone(),
+            message: commit.commit.message.trim().to_string(),
             author_email: author_email.to_string(),
             author_name: author_name.to_string(),
             timestamp: commit.created,
@@ -228,32 +228,44 @@ impl From<CommitInfo> for activity::Activity {
             date: commit.created,
             content,
             username: author_name,
+            email: author_email,
+            source_link: commit.commit.url,
         }
     }
 }
 
-impl From<CommitInfoShort> for activity::Activity {
-    fn from(commit_info_short: CommitInfoShort) -> activity::Activity {
-        let content = activity::ActivityContent::Commit(activity::Commit {
-            sha1: commit_info_short.sha1,
-            message: commit_info_short.message,
-            author_email: commit_info_short.author_email,
-            author_name: commit_info_short.author_name.clone(),
-            timestamp: commit_info_short.timestamp,
-        });
+fn commit_info_short_to_activity(
+    commit_info_short: CommitInfoShort,
+    gitea_repo: &GiteaRepo,
+) -> activity::Activity {
+    let content = activity::ActivityContent::Commit(activity::Commit {
+        sha1: commit_info_short.sha1.clone(),
+        message: commit_info_short.message.trim().to_string(),
+        author_email: commit_info_short.author_email.clone(),
+        author_name: commit_info_short.author_name.clone(),
+        timestamp: commit_info_short.timestamp,
+    });
 
-        activity::Activity {
-            op_type: activity::OpType::CommitRepo,
-            date: commit_info_short.timestamp,
-            content,
-            username: commit_info_short.author_name,
-        }
+    let mut source_link = gitea_repo.html_url.clone();
+    source_link
+        .path_segments_mut()
+        .expect("URL cannot be a base")
+        .push("commit")
+        .push(&commit_info_short.sha1);
+
+    activity::Activity {
+        op_type: activity::OpType::CommitRepo,
+        date: commit_info_short.timestamp,
+        content,
+        username: commit_info_short.author_name,
+        email: commit_info_short.author_email,
+        source_link,
     }
 }
 
 #[derive(Debug)]
 pub struct GiteaClient {
-    base_url: Url,
+    api_url: Url,
     username: String,
     _token: Option<String>,
     client: reqwest::Client,
@@ -261,8 +273,8 @@ pub struct GiteaClient {
 
 impl GiteaClient {
     pub fn new(config: &ServiceConfig) -> anyhow::Result<Self> {
-        let mut base_url = config.url.clone();
-        base_url
+        let mut api_url = config.url.clone();
+        api_url
             .path_segments_mut()
             .map_err(|_| anyhow::anyhow!("Invalid base URL"))?
             .extend("/api/v1".split('/'));
@@ -280,7 +292,7 @@ impl GiteaClient {
         Ok(Self {
             client,
             username: config.username.clone(),
-            base_url,
+            api_url,
             _token: Some(config.token.clone()),
         })
     }
@@ -306,14 +318,14 @@ impl ServiceClient for GiteaClient {
     async fn get_repos(
         &self,
     ) -> anyhow::Result<HashMap<activity::Repository, HashSet<activity::Activity>>> {
-        println!("Fetching activities from {}", self.base_url);
+        println!("Fetching activities from {}", self.api_url);
         let mut repos: HashMap<activity::Repository, HashSet<activity::Activity>> = HashMap::new();
         let mut page = 1;
         let limit = 50;
         loop {
             let url = format!(
                 "{}/users/{}/activities/feeds?only-performed-by=true&page={}&limit={}",
-                self.base_url, self.username, page, limit
+                self.api_url, self.username, page, limit
             );
 
             let result: Vec<GiteaActivity> = self
@@ -338,7 +350,11 @@ impl ServiceClient for GiteaClient {
                     let mut count: i64 = (c.len as i64) - (c.commits.len() as i64);
 
                     let last_sha1 = c.commits.last().and_then(|lc| Some(lc.sha1.clone()));
-                    activities.extend(c.commits.into_iter().map(|c| c.into()));
+                    activities.extend(
+                        c.commits
+                            .into_iter()
+                            .map(|c| commit_info_short_to_activity(c, &activity.repo)),
+                    );
 
                     // Gitea users/username/activities only show maximum of 4 activities, so we dig further to get the rest
                     if count > 0 {
@@ -349,7 +365,7 @@ impl ServiceClient for GiteaClient {
                         'scroller: loop {
                             let url = format!(
                                 "{}/repos/{}/commits?sha={}&page={}&limit={}",
-                                self.base_url,
+                                self.api_url,
                                 activity.repo.full_name,
                                 last_sha1.clone().unwrap(),
                                 page2,
@@ -406,16 +422,31 @@ impl ServiceClient for GiteaClient {
     }
 }
 
+// Looks absolutely horrible, just to avoid email being different
+// Sometimes it shows user@noreply.localhost
 impl Hash for activity::Activity {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.op_type.hash(state);
-        self.content.hash(state);
+        match &self.content {
+            ActivityContent::Commit(c) => {
+                c.message.hash(state);
+                c.sha1.hash(state);
+                c.timestamp.hash(state);
+            }
+        };
     }
 }
 
 impl Eq for activity::Activity {}
 impl PartialEq for activity::Activity {
     fn eq(&self, other: &Self) -> bool {
-        self.op_type == other.op_type && self.content == other.content
+        self.op_type == other.op_type
+            && match &self.content {
+                ActivityContent::Commit(c) => match &other.content {
+                    ActivityContent::Commit(oc) => {
+                        c.message == oc.message && c.sha1 == oc.sha1 && c.timestamp == oc.timestamp
+                    }
+                },
+            }
     }
 }

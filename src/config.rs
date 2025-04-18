@@ -1,9 +1,10 @@
+// Allow dead code because enums are not fully implemented yet
+#![allow(dead_code)]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::{fs, path::PathBuf};
 use toml;
 use url::Url;
 
-use crate::github;
 use crate::services::{self, gitea::GiteaClient};
 
 // Taken from here https://github.com/awesome-selfhosted/awesome-selfhosted?tab=readme-ov-file#software-development---project-management
@@ -79,12 +80,23 @@ impl ServiceConfig {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PushMethod {
+    Http,
+    Ssh,
+}
+impl Default for PushMethod {
+    fn default() -> Self {
+        PushMethod::Ssh
+    }
+}
+#[derive(Debug, PartialEq, Clone)]
 pub enum RedactLevel {
     Off,
     PrivateRepos,
     PrivateReposNoCrossLinking,
-    Encrypted,
+    Encrypted, // TODO: These will be properly implemented in the future
     Hashed,
 }
 
@@ -110,17 +122,11 @@ impl<'de> Deserialize<'de> for RedactLevel {
     {
         let value = u8::deserialize(deserializer)?;
         match value {
-            0 => Err(serde::de::Error::custom(
-                "Not implemented yet, only \"2\" (Hashed) is implemented",
-            )), // Ok(RedactLevel::Off),
-            1 => Err(serde::de::Error::custom(
-                "Not implemented yet, only \"2\" (Hashed) is implemented",
-            )), // Ok(RedactLevel::PrivateRepos),
-            2 => Err(serde::de::Error::custom(
-                "Not implemented yet, only \"2\" (Hashed) is implemented",
-            )), // Ok(RedactLevel::PrivateReposNoCrossLinking),
+            0 => Ok(RedactLevel::Off),
+            1 => Ok(RedactLevel::PrivateRepos),
+            2 => Ok(RedactLevel::PrivateReposNoCrossLinking),
             3 => Err(serde::de::Error::custom(
-                "Not implemented yet, only \"2\" (Hashed) is implemented",
+                "Encrypted redaction is not implemented yet",
             )), // Ok(RedactLevel::Encrypted),
             4 => Ok(RedactLevel::Hashed),
             _ => Err(serde::de::Error::custom(
@@ -136,19 +142,21 @@ impl Default for RedactLevel {
     }
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-pub struct GithubConfig {
+#[derive(Deserialize, Serialize, Debug, Clone)]
+pub struct GitConfig {
     pub username: String,
     pub token: String,
     pub email: Option<String>,
     #[serde(default)]
     pub redact_level: RedactLevel,
+    #[serde(default)]
+    pub push_method: PushMethod,
 }
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     pub services: Vec<ServiceConfig>,
-    pub github: GithubConfig,
+    pub github: GitConfig,
 }
 
 impl Config {

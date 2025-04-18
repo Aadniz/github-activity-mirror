@@ -40,7 +40,9 @@ pub struct Activity {
     pub op_type: OpType,
     pub date: DateTime<chrono::FixedOffset>,
     pub content: ActivityContent,
+    pub source_link: Url,
     pub username: String,
+    pub email: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Eq, Hash, PartialEq)]
@@ -57,21 +59,21 @@ pub struct Repository {
     pub created_date: DateTime<chrono::FixedOffset>,
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum ActivityContent {
     Commit(Commit),
     // Other activity types...
 }
 impl ActivityContent {
-    pub fn sha(&self) -> &String {
+    pub fn _sha(&self) -> &String {
         match self {
             ActivityContent::Commit(c) => &c.sha1,
         }
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Commit {
     pub sha1: String,
     pub message: String,

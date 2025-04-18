@@ -10,6 +10,7 @@ use config::Config;
 
 mod activity;
 mod config;
+mod git;
 mod github;
 mod services;
 

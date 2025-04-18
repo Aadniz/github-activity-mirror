@@ -1,38 +1,34 @@
-use chrono::DateTime;
 use serde_json::json;
 use sha1_smol::Sha1;
 use std::collections::{HashMap, HashSet};
 
-use octocrab::{models::repos::CommitAuthor, params::repos::Reference, Octocrab};
+use octocrab::Octocrab;
 
 use crate::{
-    activity::{self},
-    config::{self, GithubConfig},
+    activity::{self, ActivityContent},
+    config::{self, GitConfig, RedactLevel},
+    git::Git,
 };
 
 const MARK_STRING: &str = "<sub>This repo was mirrored using [github-activity-mirror](https://github.com/Aadniz/github-activity-mirror), preserving the privacy while at the same time display your actual activity</sub>";
-const BRANCH: &str = "main";
+const _BRANCH: &str = "main";
 
 pub struct GithubClient {
-    config: GithubConfig,
-    client: reqwest::Client,
+    config: GitConfig,
+    // client: reqwest::Client,
     // Might come in handy
     octocrab: Octocrab,
+    git: Git,
 }
 
 impl GithubClient {
-    pub async fn new(mut github_config: GithubConfig) -> Self {
+    pub async fn new(mut github_config: GitConfig) -> Self {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
             reqwest::header::AUTHORIZATION,
             reqwest::header::HeaderValue::from_str(&format!("token {}", github_config.token))
                 .unwrap(),
         );
-
-        let client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap();
 
         let octocrab = octocrab::instance()
             .user_access_token(&*github_config.token)
@@ -60,10 +56,12 @@ impl GithubClient {
             panic!("Unable to get github email. Specify this in the settings.toml file")
         }
 
+        let git = Git::new(github_config.clone());
+
         Self {
             config: github_config,
-            client,
             octocrab,
+            git,
         }
     }
 
@@ -127,27 +125,10 @@ impl GithubClient {
                     }
                     first_activity
                 };
-                println!("{:?}", first_activity);
                 self.create_repo(&source_repo, first_activity).await?
             };
 
             self.sync_repo(repo, activities).await?;
-        }
-
-        let octocrab = octocrab::instance().user_access_token(self.config.token.clone())?;
-        // Returns the first page of all issues.
-        let mut page = octocrab
-            .repos("Aadniz", "nix-config")
-            .list_commits()
-            // Optional Parameters
-            .per_page(50)
-            .send()
-            .await?;
-
-        // Go through every page of issues. Warning: There's no rate limiting so
-        // be careful.
-        for commit in &page {
-            println!("{}", commit.commit.message);
         }
 
         Ok(())
@@ -158,6 +139,70 @@ impl GithubClient {
         repo: octocrab::models::Repository,
         activities: HashSet<activity::Activity>,
     ) -> anyhow::Result<()> {
+        let last_commit = self.git.last_commit(&repo)?;
+
+        let mut activities = activities.into_iter().collect::<Vec<activity::Activity>>();
+
+        // Sort date in ascending order
+        activities.sort_by(|a, b| a.date.cmp(&b.date));
+
+        for activity in activities {
+            if last_commit.timestamp > activity.date {
+                continue;
+            }
+            match activity.content {
+                ActivityContent::Commit(c) => {
+                    let commit_message: String = match self.config.redact_level {
+                        RedactLevel::PrivateReposNoCrossLinking => c.message.clone(),
+                        RedactLevel::Encrypted => todo!("Not implemented yet"),
+                        RedactLevel::Hashed => Sha1::from(&c.message).digest().to_string(),
+                        _ => format!("{}\n\nMirrored from: {}", c.message, activity.source_link),
+                    };
+                    let commit_content = match self.config.redact_level {
+                        RedactLevel::PrivateReposNoCrossLinking => {
+                            format!("{} {}: {}", &c.sha1, c.timestamp, c.message)
+                        }
+                        RedactLevel::Encrypted => todo!("Not implemented yet"),
+                        RedactLevel::Hashed => {
+                            Sha1::from(format!("{} {}: {}", &c.sha1, c.timestamp, c.message))
+                                .digest()
+                                .to_string()
+                        }
+                        _ => format!(
+                            "{} {}: {}\n\n*{}*",
+                            &c.sha1, c.timestamp, c.message, activity.source_link
+                        ),
+                    };
+                    self.git
+                        .add_commit(&repo, commit_message, commit_content, activity.date)?;
+                    println!(
+                        "{} - {}: {}{}",
+                        activity.date,
+                        repo.full_name.clone().unwrap(),
+                        c.message
+                            .lines()
+                            .find(|line| !line.trim().is_empty())
+                            .unwrap_or("<Empty commit message>"),
+                        if c.message.lines().count() > 1 {
+                            " ..."
+                        } else {
+                            ""
+                        }
+                    )
+                }
+            }
+        }
+
+        let count = self.git.unpushed_commits(&repo)?;
+        if count > 0 {
+            self.git.push(&repo)?;
+            println!(
+                "Pushed {} new commits to {}",
+                count,
+                repo.html_url.clone().unwrap()
+            );
+        }
+
         Ok(())
     }
 
@@ -215,45 +260,10 @@ impl GithubClient {
         let body = serde_json::to_value(&req).unwrap();
 
         let new_repo = self.octocrab.post("/user/repos", Some(&body)).await?;
-        self.create_init(&new_repo, init_activity).await?;
+        self.git.create_init(&new_repo, init_activity)?;
 
-        if true {
-            panic!(
-                "Created repo {}/{} Go check it out now",
-                self.config.username, name
-            );
-        }
+        println!("Created repo: {}", new_repo.html_url.clone().unwrap());
 
         Ok(new_repo)
-    }
-
-    // Creates the main branch and the README file
-    async fn create_init(
-        &self,
-        repo: &octocrab::models::Repository,
-        init_activity: &activity::Activity,
-    ) -> anyhow::Result<()> {
-        let response = self
-            .octocrab
-            .repos_by_id(repo.id)
-            .create_file("README.md", "Init commit", MARK_STRING)
-            .branch(BRANCH)
-            .commiter(CommitAuthor {
-                name: self.config.username.clone(),
-                email: self.config.email.clone().unwrap(),
-                date: Some(init_activity.date.into()),
-            })
-            .author(CommitAuthor {
-                name: self.config.username.clone(),
-                email: self.config.email.clone().unwrap(),
-                date: Some(init_activity.date.into()),
-            })
-            .send()
-            .await
-            .unwrap();
-
-        println!("{:?}", response.commit);
-        //create_git_commit_object("Init commit", tree);
-        Ok(())
     }
 }
