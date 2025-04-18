@@ -1,6 +1,7 @@
 use serde_json::json;
 use sha1_smol::Sha1;
 use std::collections::{HashMap, HashSet};
+use std::io::{self, Write};
 
 use octocrab::Octocrab;
 
@@ -15,8 +16,8 @@ const _BRANCH: &str = "main";
 
 pub struct GithubClient {
     config: GitConfig,
-    // client: reqwest::Client,
     // Might come in handy
+    // client: reqwest::Client,
     octocrab: Octocrab,
     git: Git,
 }
@@ -80,15 +81,20 @@ impl GithubClient {
                 &format!("{}-{}", owner, source_repo.name)
             };
 
-            println!("Testing {}/{}", self.config.username, name);
+            print!("\r\x1B[KChecking {}/{}", self.config.username, name);
+            io::stdout().flush().unwrap();
             let repo = match self.octocrab.repos(&self.config.username, name).get().await {
                 Ok(r) => Some(r),
                 Err(octocrab::Error::GitHub { source, .. }) if source.status_code == 404 => {
-                    let name = Sha1::from(&name).digest().to_string();
-                    println!("Testing {}/{}", self.config.username, name);
+                    let hashed_name = Sha1::from(&name).digest().to_string();
+                    print!(
+                        "\r\x1B[KChecking {}/{} ({}/{})",
+                        self.config.username, hashed_name, self.config.username, name
+                    );
+                    io::stdout().flush().unwrap();
                     match self
                         .octocrab
-                        .repos(&self.config.username, &name)
+                        .repos(&self.config.username, &hashed_name)
                         .get()
                         .await
                     {
@@ -99,13 +105,16 @@ impl GithubClient {
                             None
                         }
                         Err(e) => {
-                            eprintln!("Error checking repo {}/{}: {}", owner, &name, e);
+                            eprintln!(
+                                "\nError checking repo {}/{} ({}/{}): {}",
+                                owner, &hashed_name, owner, &hashed_name, e
+                            );
                             continue 'repoloop;
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error checking repo {}/{}: {}", owner, name, e);
+                    eprintln!("\nError checking repo {}/{}: {}", owner, name, e);
                     continue 'repoloop;
                 }
             };
@@ -125,6 +134,7 @@ impl GithubClient {
                     }
                     first_activity
                 };
+                println!("\nCreating repo: {}", source_repo.full_name);
                 self.create_repo(&source_repo, first_activity).await?
             };
 
@@ -142,6 +152,7 @@ impl GithubClient {
         let last_commit = self.git.last_commit(&repo)?;
 
         let mut activities = activities.into_iter().collect::<Vec<activity::Activity>>();
+        let mut sync_informed = false;
 
         // Sort date in ascending order
         activities.sort_by(|a, b| a.date.cmp(&b.date));
@@ -149,6 +160,10 @@ impl GithubClient {
         for activity in activities {
             if last_commit.timestamp > activity.date {
                 continue;
+            }
+            if !sync_informed {
+                println!("\nSyncing: {}", repo.full_name.clone().unwrap());
+                sync_informed = true;
             }
             match activity.content {
                 ActivityContent::Commit(c) => {
@@ -237,7 +252,6 @@ impl GithubClient {
         let name = match self.config.redact_level {
             config::RedactLevel::Encrypted => todo!("Encrypting description not implemented yet"),
             config::RedactLevel::Hashed => Sha1::from(&name).digest().to_string(),
-
             _ => name.clone(),
         };
         let desc = match self.config.redact_level {

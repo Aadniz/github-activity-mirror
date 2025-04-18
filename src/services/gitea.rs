@@ -215,7 +215,7 @@ impl From<CommitInfo> for activity::Activity {
                 commit.commit.author.name.clone(),
             ));
 
-        let content = activity::ActivityContent::Commit(activity::Commit {
+        let content = ActivityContent::Commit(activity::Commit {
             sha1: commit.sha.clone(),
             message: commit.commit.message.trim().to_string(),
             author_email: author_email.to_string(),
@@ -238,7 +238,7 @@ fn commit_info_short_to_activity(
     commit_info_short: CommitInfoShort,
     gitea_repo: &GiteaRepo,
 ) -> activity::Activity {
-    let content = activity::ActivityContent::Commit(activity::Commit {
+    let content = ActivityContent::Commit(activity::Commit {
         sha1: commit_info_short.sha1.clone(),
         message: commit_info_short.message.trim().to_string(),
         author_email: commit_info_short.author_email.clone(),

@@ -150,14 +150,26 @@ impl Git {
             .context("Failed to execute git commit")?;
 
         if !output.status.success() {
-            anyhow::bail!(
-                "Git command '{}$ git {}' failed with exit code {}\nstdout: {}\nstderr: {}",
-                repo_path.as_os_str().to_str().unwrap(),
-                args.join(" "),
-                output.status.code().unwrap(),
-                String::from_utf8_lossy(&output.stdout),
-                String::from_utf8_lossy(&output.stderr)
-            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+
+            // Handle "nothing to commit"
+            if stderr.is_empty()
+                && stdout
+                    .trim()
+                    .ends_with("nothing to commit, working tree clean")
+            {
+                eprintln!("WARNING: Possible duplicate commit: {}", commit_message);
+            } else {
+                anyhow::bail!(
+                    "Git command '{}$ git {}' failed with exit code {}\nstdout: {}\nstderr: {}",
+                    repo_path.as_os_str().to_str().unwrap(),
+                    args.join(" "),
+                    output.status.code().unwrap(),
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
         }
         Ok(())
     }
