@@ -10,49 +10,6 @@ This application **DOES NOT** push the code to GitHub, rather it only changes th
 
 Many people have stepped away from the popular Github website, switching it out their main activity with alternatives such as Codeberg, GitLab, Forgejo. You won't know what GitHub does behind your back, *EVEN* when the repositories are set to private.
 
-For the moment, only Gitea is supported, but wish to support all the following git-like (or work-like) services in the future:
-
-- [Cgit](https://git.zx2c4.com/cgit/about/)
-- [Forgejo](https://forgejo.org)
-- [Fossil](https://www.fossil-scm.org/index.html/doc/trunk/www/index.wiki)
-- [Gerrit](https://www.gerritcodereview.com/)
-- [Gitblit](https://www.gitblit.com/)
-- [gitbucket](https://gitbucket.github.io/gitbucket-news/)
-- [Gitea](https://gitea.com)
-- [GitLab](https://about.gitlab.com)
-- [Gitolite](https://gitolite.com/gitolite/index.html)
-- [Gogs](https://gogs.io/)
-- [Huly](https://huly.io)
-- [Kallithea](https://kallithea-scm.org/)
-- [Klaus](https://github.com/jonashaag/klaus)
-- [Leantime](https://leantime.io)
-- [Mindwendel](https://www.mindwendel.com/)
-- [minimal-git-server](https://github.com/mcarbonne/minimal-git-server)
-- [Octobox](https://octobox.io/)
-- [OneDev](https://onedev.io/)
-- [OpenProject](https://www.openproject.org)
-- [Pagure](https://pagure.io/pagure)
-- [Phorge](https://we.phorge.it/)
-- [Plane](https://plane.so)
-- [ProjeQtOr](https://www.projeqtor.org/)
-- [Redmine](https://www.redmine.org/)
-- [Review Board](https://www.reviewboard.org/)
-- [rgit](https://github.com/w4/rgit)
-- [RhodeCode](https://rhodecode.com/)
-- [Rukovoditel](https://www.rukovoditel.net/)
-- [SCM Manager](https://www.scm-manager.org/)
-- [Smederee](https://smeder.ee)
-- [Sourcehut](https://sourcehut.org/)
-- [Taiga](https://www.taiga.io/)
-- [Titra](https://titra.io/)
-- [Trac](https://trac.edgewall.org/)
-- [Traq](https://traq.io/)
-- [Tuleap](https://www.tuleap.org/)
-- [UVDesk](https://www.uvdesk.com/)
-- [ZenTao](https://www.zentao.pm/)
-
-Cross support would also be very interesting.
-
 ## Getting started
 
 You start by setting up a `settings.toml` config file. This defines the username, api key, host address nessesary to read through all your activity.
@@ -114,3 +71,50 @@ With a redaction level of 4, the result might look something like this:
 ## Contributing
 
 I would very appreciate to see some more services than Gitea be supported, implement a new service by creating a Rust file under `src/services/service_name.rs` having the `ServiceClient` trait.
+
+For the moment, only Gitea is supported, but wish to support all the following git-like (or work-like) services in the future:
+
+- [Bitbucket](https://bitbucket.org)
+- [Cgit](https://git.zx2c4.com/cgit/about/)
+- [Codebase](https://www.codebasehq.com)
+- [Codeberg](https://codeberg.org)
+- [Forgejo](https://forgejo.org)
+- [Fossil](https://www.fossil-scm.org/index.html/doc/trunk/www/index.wiki)
+- [Gerrit](https://www.gerritcodereview.com/)
+- [Gitblit](https://www.gitblit.com/)
+- [gitbucket](https://gitbucket.github.io/gitbucket-news/)
+- [Gitea](https://gitea.com)
+- [GitLab](https://about.gitlab.com)
+- [Gitolite](https://gitolite.com/gitolite/index.html)
+- [Gogs](https://gogs.io/)
+- [Huly](https://huly.io)
+- [Kallithea](https://kallithea-scm.org/)
+- [Klaus](https://github.com/jonashaag/klaus)
+- [Launchpad](https://launchpad.net)
+- [Leantime](https://leantime.io)
+- [Mindwendel](https://www.mindwendel.com/)
+- [minimal-git-server](https://github.com/mcarbonne/minimal-git-server)
+- [Octobox](https://octobox.io/)
+- [OneDev](https://onedev.io/)
+- [OpenProject](https://www.openproject.org)
+- [Pagure](https://pagure.io/pagure)
+- [Phorge](https://we.phorge.it/)
+- [Plane](https://plane.so)
+- [ProjeQtOr](https://www.projeqtor.org/)
+- [Redmine](https://www.redmine.org/)
+- [Review Board](https://www.reviewboard.org/)
+- [rgit](https://github.com/w4/rgit)
+- [RhodeCode](https://rhodecode.com/)
+- [Rukovoditel](https://www.rukovoditel.net/)
+- [SCM Manager](https://www.scm-manager.org/)
+- [Smederee](https://smeder.ee)
+- [Sourcehut](https://sourcehut.org/)
+- [Taiga](https://www.taiga.io/)
+- [Titra](https://titra.io/)
+- [Trac](https://trac.edgewall.org/)
+- [Traq](https://traq.io/)
+- [Tuleap](https://www.tuleap.org/)
+- [UVDesk](https://www.uvdesk.com/)
+- [ZenTao](https://www.zentao.pm/)
+
+Cross support would also be very interesting.
