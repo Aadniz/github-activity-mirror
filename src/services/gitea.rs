@@ -294,6 +294,9 @@ impl GiteaClient {
             html_url: gitea_repo.html_url.clone(),
             clone_url: gitea_repo.clone_url.clone(),
             private: gitea_repo.private,
+            description: (!gitea_repo.description.is_empty())
+                .then(|| gitea_repo.description.clone()),
+            created_date: gitea_repo.created_at,
         }
     }
 }

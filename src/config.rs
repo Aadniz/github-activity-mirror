@@ -140,6 +140,7 @@ impl Default for RedactLevel {
 pub struct GithubConfig {
     pub username: String,
     pub token: String,
+    pub email: Option<String>,
     #[serde(default)]
     pub redact_level: RedactLevel,
 }

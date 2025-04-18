@@ -49,10 +49,12 @@ pub struct Repository {
     pub owned_by_you: bool,
     pub owner: String,
     pub name: String,
+    pub description: Option<String>,
     pub full_name: String,
     pub html_url: Url,
     pub clone_url: Url,
     pub private: bool,
+    pub created_date: DateTime<chrono::FixedOffset>,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -60,6 +62,13 @@ pub struct Repository {
 pub enum ActivityContent {
     Commit(Commit),
     // Other activity types...
+}
+impl ActivityContent {
+    pub fn sha(&self) -> &String {
+        match self {
+            ActivityContent::Commit(c) => &c.sha1,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
