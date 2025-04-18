@@ -68,6 +68,8 @@ With a redaction level of 4, the result might look something like this:
 ![Redact Level 4 repository](/screenshots/Screenshot_20250418_163247.png)
 ![Redact Level 4 commits](/screenshots/Screenshot_20250418_162913.png)
 
+If set to redact level 1 or higher, remember to enable Private contributions in the [Contribution settings](https://github.com/settings/profile#contributions-activity-heading).
+
 ## Contributing
 
 I would very appreciate to see some more services than Gitea be supported, implement a new service by creating a Rust file under `src/services/service_name.rs` having the `ServiceClient` trait.
