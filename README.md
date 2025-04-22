@@ -14,12 +14,18 @@ Many people have stepped away from the popular Github website, switching it out 
 
 You start by setting up a `settings.toml` config file. This defines the username, api key, host address nessesary to read through all your activity.
 
-Here is an example `setting.toml` up activity syncing from Gitea to GitHub:
+Here is an example `setting.toml` up activity syncing from Gitea and Codeberg to GitHub:
 
 ``` toml
 [[services]]
 service_type = "gitea"
 url = "https://gitea.yourhost.com"
+username = "myusername"
+token = "<your token here>"
+
+[[services]]
+service_type = "codeberg"
+url = "https://codeberg.org"
 username = "myusername"
 token = "<your token here>"
 
@@ -40,7 +46,7 @@ Then compile the application with `cargo build --release`, run it with `./target
 The application looks at the recent activities on set platforms, and notes down the title, description and date when these activities happened. It then compare the repositories with what's available on your GitHub profile, syncing up everything that doesn't exist, or has a marker at the bottom of the README.md. The marker it looks for looks like this:
 
 ``` markdown
-<sub>This repo was mirrored using [github-activity-mirror](https://github.com/Aadniz/github-activity-mirror), preserving the privacy while at the same time display your actual activity</sub>
+<sub>This repo was mirrored using [github-activity-mirror](https://codeberg.org/Aadniz/github-activity-mirror), preserving the privacy while at the same time display your actual activity</sub>
 ```
 
 This marker is included as a way to distinguish what is your own independent repositories, and what is created by this application.
@@ -72,20 +78,18 @@ If set to redact level 1 or higher, remember to enable Private contributions in 
 
 ## Contributing
 
-I would very appreciate to see some more services than Gitea be supported, implement a new service by creating a Rust file under `src/services/service_name.rs` having the `ServiceClient` trait.
+I would very appreciate to see some more services than Gitea and Codeberg supported, implement a new service by creating a Rust file under `src/services/service_name.rs` having the `ServiceClient` trait.
 
-For the moment, only Gitea is supported, but wish to support all the following git-like (or work-like) services in the future:
+For the moment, only Gitea and Codeberg are supported, but wish to support all the following git-like (or work-like) services in the future:
 
 - [Bitbucket](https://bitbucket.org)
 - [Cgit](https://git.zx2c4.com/cgit/about/)
 - [Codebase](https://www.codebasehq.com)
-- [Codeberg](https://codeberg.org)
 - [Forgejo](https://forgejo.org)
 - [Fossil](https://www.fossil-scm.org/index.html/doc/trunk/www/index.wiki)
 - [Gerrit](https://www.gerritcodereview.com/)
 - [Gitblit](https://www.gitblit.com/)
 - [gitbucket](https://gitbucket.github.io/gitbucket-news/)
-- [Gitea](https://gitea.com)
 - [GitLab](https://about.gitlab.com)
 - [Gitolite](https://gitolite.com/gitolite/index.html)
 - [Gogs](https://gogs.io/)

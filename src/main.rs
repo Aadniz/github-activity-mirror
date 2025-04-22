@@ -32,6 +32,10 @@ async fn main() -> anyhow::Result<()> {
 
     for service in config.services {
         if let Some(client) = &service.client {
+            println!(
+                "\nFetching activities from {:?} ({})",
+                service.service_type, service.url
+            );
             let result = client.get_repos().await?;
             repos.extend(result);
         }

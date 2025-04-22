@@ -11,7 +11,7 @@ use crate::{
     git::Git,
 };
 
-const MARK_STRING: &str = "<sub>This repo was mirrored using [github-activity-mirror](https://github.com/Aadniz/github-activity-mirror), preserving the privacy while at the same time display your actual activity</sub>";
+const MARK_STRING: &str = "<sub>This repo was mirrored using [github-activity-mirror](https://codeberg.org/Aadniz/github-activity-mirror), preserving the privacy while at the same time display your actual activity</sub>";
 const _BRANCH: &str = "main";
 
 pub struct GithubClient {
@@ -71,7 +71,7 @@ impl GithubClient {
         repos: HashMap<activity::Repository, HashSet<activity::Activity>>,
     ) -> anyhow::Result<()> {
         // Get all unique repos
-        println!("\nSyncing...");
+        print!("\n");
 
         'repoloop: for (source_repo, activities) in repos {
             let owner = &source_repo.owner;
@@ -118,6 +118,7 @@ impl GithubClient {
                     continue 'repoloop;
                 }
             };
+            print!("\n");
 
             let repo = if let Some(repo) = repo {
                 if !self.is_mirror(&repo).await? {
@@ -134,7 +135,7 @@ impl GithubClient {
                     }
                     first_activity
                 };
-                println!("\nCreating repo: {}", source_repo.full_name);
+                println!("Creating repo: {}", source_repo.full_name);
                 self.create_repo(&source_repo, first_activity).await?
             };
 
@@ -158,11 +159,12 @@ impl GithubClient {
         activities.sort_by(|a, b| a.date.cmp(&b.date));
 
         for activity in activities {
+            // Squaching/force push will make this unreliable
             if last_commit.timestamp > activity.date {
                 continue;
             }
             if !sync_informed {
-                println!("\nSyncing: {}", repo.full_name.clone().unwrap());
+                println!("Syncing: {}", repo.full_name.clone().unwrap());
                 sync_informed = true;
             }
             match activity.content {

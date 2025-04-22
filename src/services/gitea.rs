@@ -9,9 +9,8 @@ use std::io::{self, Write};
 use url::Url;
 
 use crate::activity::{self, ActivityContent};
-use crate::config::ServiceConfig;
 
-use super::ServiceClient;
+use super::{ServiceClient, ServiceConfig};
 
 #[derive(Deserialize, Serialize)]
 pub struct GiteaUser {
@@ -76,7 +75,7 @@ pub struct GiteaRepo {
     pub has_wiki: bool,
     pub has_pull_requests: bool,
     pub has_projects: bool,
-    pub projects_mode: String,
+    pub projects_mode: Option<String>,
     pub has_releases: bool,
     pub has_packages: bool,
     pub has_actions: bool,
@@ -317,7 +316,6 @@ impl ServiceClient for GiteaClient {
     async fn get_repos(
         &self,
     ) -> anyhow::Result<HashMap<activity::Repository, HashSet<activity::Activity>>> {
-        println!("Fetching activities from {}", self.api_url);
         let mut repos: HashMap<activity::Repository, HashSet<activity::Activity>> = HashMap::new();
         let mut page = 1;
         let limit = 50;

@@ -6,7 +6,7 @@ use std::process::Command;
 use crate::activity::{self, Activity};
 use crate::config::{GitConfig, PushMethod};
 
-const MARK_STRING: &str = "<sub>This repo was mirrored using [github-activity-mirror](https://github.com/Aadniz/github-activity-mirror), preserving the privacy while at the same time display your actual activity</sub>";
+const MARK_STRING: &str = "<sub>This repo was mirrored using [github-activity-mirror](https://codeberg.org/Aadniz/github-activity-mirror), preserving the privacy while at the same time display your actual activity</sub>";
 const BRANCH: &str = "main";
 
 pub struct Git {
