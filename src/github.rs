@@ -1,5 +1,7 @@
+use chrono::DateTime;
 use serde_json::json;
 use sha1_smol::Sha1;
+use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::io::{self, Write};
 
@@ -151,7 +153,13 @@ impl GithubClient {
         activities: HashSet<activity::Activity>,
     ) -> anyhow::Result<()> {
         let last_commit = self.git.last_commit(&repo)?;
+        let last_issue = self.last_issue(&repo).await;
+        let last_activity = match last_issue {
+            Some(issue) => max(issue.created_at.into(), last_commit.timestamp),
+            None => last_commit.timestamp,
+        };
 
+        let mut existing_issues: Option<Vec<octocrab::models::issues::Issue>> = None;
         let mut activities = activities.into_iter().collect::<Vec<activity::Activity>>();
         let mut sync_informed = false;
 
@@ -160,7 +168,7 @@ impl GithubClient {
 
         for activity in activities {
             // Squaching/force push will make this unreliable
-            if last_commit.timestamp > activity.date {
+            if last_activity > activity.date {
                 continue;
             }
             if !sync_informed {
@@ -207,15 +215,70 @@ impl GithubClient {
                         }
                     )
                 }
+                ActivityContent::Issue(i) => {
+                    let title = match self.config.redact_level {
+                        RedactLevel::Encrypted => todo!("Not implemented yet"),
+                        RedactLevel::Hashed => {
+                            Sha1::from(format!("{}: {}", &i.issue_id, &i.message))
+                                .digest()
+                                .to_string()
+                        }
+                        _ => format!("[{}] {}", &i.issue_id, &i.message),
+                    };
+                    let title = if title.len() > 255 {
+                        let mut truncated: String = title.chars().take(252).collect();
+                        truncated.push_str("...");
+                        truncated
+                    } else {
+                        title
+                    };
+                    let body = match self.config.redact_level {
+                        RedactLevel::PrivateReposNoCrossLinking => {
+                            format!(
+                                "## Issue ID: {}\n\n{}\n\n{}",
+                                &i.issue_id, &i.message, activity.date
+                            )
+                        }
+                        RedactLevel::Encrypted => todo!("Not implemented yet"),
+                        RedactLevel::Hashed => Sha1::from(format!(
+                            "## Issue ID: {}\n\n{}\n\n{}",
+                            &i.issue_id, &i.message, activity.date
+                        ))
+                        .digest()
+                        .to_string(),
+                        _ => format!(
+                            "## Issue ID: {}\n\n{}\n\n{}\n\n*{}*",
+                            &i.issue_id, &i.message, activity.date, activity.source_link
+                        ),
+                    };
+                    let existing_issues = existing_issues
+                        .get_or_insert(self.issues_since(&repo, last_activity).await);
+
+                    if !existing_issues.iter().any(|issue| issue.title == *title) {
+                        println!(
+                            "{} - {}: [{}] {}",
+                            activity.date,
+                            repo.full_name.clone().unwrap(),
+                            i.issue_id,
+                            if i.message.is_empty() {
+                                "<Empty commit message>"
+                            } else {
+                                &i.message
+                            }
+                        );
+                        let issue = self.create_issue(&repo, title, body).await?;
+                        existing_issues.push(issue);
+                    }
+                }
             }
         }
 
-        let count = self.git.unpushed_commits(&repo)?;
-        if count > 0 {
+        let unpushed_commits = self.git.unpushed_commits(&repo)?;
+        if unpushed_commits > 0 {
             self.git.push(&repo)?;
             println!(
                 "Pushed {} new commits to {}",
-                count,
+                unpushed_commits,
                 repo.html_url.clone().unwrap()
             );
         }
@@ -281,5 +344,94 @@ impl GithubClient {
         println!("Created repo: {}", new_repo.html_url.clone().unwrap());
 
         Ok(new_repo)
+    }
+
+    async fn last_issue(
+        &self,
+        repo: &octocrab::models::Repository,
+    ) -> Option<octocrab::models::issues::Issue> {
+        // Pull requests are also issues, so we need to scroll and find the first issue
+        let mut page: u32 = 1;
+        let per_page = 50;
+        loop {
+            let results = self
+                .octocrab
+                .issues_by_id(repo.id)
+                .list()
+                .page(page)
+                .per_page(per_page)
+                .sort(octocrab::params::issues::Sort::Created)
+                .direction(octocrab::params::Direction::Descending)
+                .send()
+                .await
+                .unwrap();
+
+            if results.total_count.is_none_or(|r| r == 0) {
+                return None;
+            }
+
+            for res in results {
+                if res.pull_request.is_none() {
+                    return Some(res);
+                }
+            }
+
+            page += 1;
+        }
+    }
+
+    async fn create_issue(
+        &self,
+        repo: &octocrab::models::Repository,
+        title: String,
+        body: String,
+    ) -> anyhow::Result<octocrab::models::issues::Issue> {
+        Ok(self
+            .octocrab
+            .issues_by_id(repo.id)
+            .create(title)
+            .body(body)
+            .send()
+            .await?)
+    }
+
+    async fn issues_since(
+        &self,
+        repo: &octocrab::models::Repository,
+        since: DateTime<chrono::FixedOffset>,
+    ) -> Vec<octocrab::models::issues::Issue> {
+        let mut page: u32 = 0;
+        let per_page = 50;
+
+        let mut issues = vec![];
+
+        println!("Getting issues from repo: {}", repo.name);
+
+        loop {
+            let results = self
+                .octocrab
+                .issues_by_id(repo.id)
+                .list()
+                .since(since)
+                .page(page)
+                .per_page(per_page)
+                .sort(octocrab::params::issues::Sort::Created)
+                .direction(octocrab::params::Direction::Descending)
+                .send()
+                .await
+                .unwrap();
+
+            let res: Vec<octocrab::models::issues::Issue> = results.items.into_iter().collect();
+
+            if res.is_empty() {
+                break;
+            }
+
+            issues.extend(res.into_iter().filter(|res| res.pull_request.is_none()));
+
+            page += 1;
+        }
+
+        issues
     }
 }

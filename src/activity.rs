@@ -63,14 +63,8 @@ pub struct Repository {
 #[serde(untagged)]
 pub enum ActivityContent {
     Commit(Commit),
+    Issue(Issue),
     // Other activity types...
-}
-impl ActivityContent {
-    pub fn _sha(&self) -> &String {
-        match self {
-            ActivityContent::Commit(c) => &c.sha1,
-        }
-    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -80,4 +74,10 @@ pub struct Commit {
     pub author_email: String,
     pub author_name: String,
     pub timestamp: DateTime<chrono::FixedOffset>,
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct Issue {
+    pub issue_id: u64,
+    pub message: String,
 }

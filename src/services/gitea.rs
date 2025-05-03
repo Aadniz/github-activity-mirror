@@ -2,17 +2,17 @@ use async_trait::async_trait;
 use chrono::{DateTime, FixedOffset};
 use reqwest;
 use serde;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::io::{self, Write};
 use url::Url;
 
-use crate::activity::{self, ActivityContent};
+use crate::activity::{self, ActivityContent, OpType};
 
 use super::{ServiceClient, ServiceConfig};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GiteaUser {
     pub id: u64,
     pub login: String,
@@ -38,7 +38,7 @@ pub struct GiteaUser {
     pub username: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct GiteaRepo {
     pub id: u64,
     pub owner: GiteaUser,
@@ -113,28 +113,6 @@ struct CommitContent {
     len: u64,
 }
 
-fn string_json<'de, D>(deserializer: D) -> Result<GiteaContent, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?;
-
-    // If it looks like JSON, try to parse it as GiteaContent::Commit
-    if s.starts_with('{') {
-        match serde_json::from_str::<GiteaContent>(&s) {
-            Ok(content) => Ok(content),
-            Err(e) => {
-                println!("{e}");
-                Ok(GiteaContent::String(s))
-            }
-        }
-    } else if s.is_empty() {
-        Ok(GiteaContent::None)
-    } else {
-        Ok(GiteaContent::String(s))
-    }
-}
-
 #[derive(Deserialize, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 struct CommitInfoShort {
@@ -185,7 +163,7 @@ struct CommitInfo {
     // stats: todo!("Unimportant"),
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 struct GiteaActivity {
     id: u64,
     user_id: u64,
@@ -198,8 +176,7 @@ struct GiteaActivity {
     // comment: null,  // Don't know what type this is, doesn't matter either for this application
     ref_name: String,
     is_private: bool,
-    #[serde(deserialize_with = "string_json")]
-    content: GiteaContent,
+    content: String,
     created: DateTime<FixedOffset>,
 }
 
@@ -343,70 +320,140 @@ impl ServiceClient for GiteaClient {
                 let repo = self.to_activity_repo(&activity.repo);
                 let activities = repos.entry(repo).or_insert_with(HashSet::new);
 
-                if let GiteaContent::Commit(c) = activity.content {
-                    let mut count: i64 = (c.len as i64) - (c.commits.len() as i64);
-
-                    let last_sha1 = c.commits.last().and_then(|lc| Some(lc.sha1.clone()));
-                    activities.extend(
-                        c.commits
-                            .into_iter()
-                            .map(|c| commit_info_short_to_activity(c, &activity.repo)),
-                    );
-
-                    // Gitea users/username/activities only show maximum of 4 activities, so we dig further to get the rest
-                    if count > 0 {
-                        let mut page2 = 1;
-                        // Super slow otherwise
-                        let limit2 = count * 2;
-
-                        'scroller: loop {
-                            let url = format!(
-                                "{}/repos/{}/commits?sha={}&page={}&limit={}",
-                                self.api_url,
-                                activity.repo.full_name,
-                                last_sha1.clone().unwrap(),
-                                page2,
-                                limit2
-                            );
-
-                            let result: Vec<CommitInfo> = self
-                                .client
-                                .get(&url)
-                                .send()
-                                .await?
-                                .error_for_status()?
-                                .json()
-                                .await?;
-
-                            // Gitea API will return an empty array if the limit + page goes beyond the activity
-                            if result.is_empty() {
-                                // Should technically never land here
-                                print!("!");
-                                io::stdout().flush().ok().expect("Could not flush stdout");
-                                break 'scroller;
+                match activity.op_type {
+                    OpType::CommitRepo => {
+                        let c = match serde_json::from_str::<CommitContent>(&activity.content) {
+                            Ok(c) => c,
+                            Err(_) => {
+                                // Likely empty init commit, this can safely be skipped
+                                continue;
                             }
+                        };
 
-                            for commit in result {
-                                print!(".");
-                                io::stdout().flush().ok().expect("Could not flush stdout");
+                        let mut count: i64 = (c.len as i64) - (c.commits.len() as i64);
 
-                                if 0 >= count {
+                        let last_sha1 = c.commits.last().and_then(|lc| Some(lc.sha1.clone()));
+                        activities.extend(
+                            c.commits
+                                .into_iter()
+                                .map(|c| commit_info_short_to_activity(c, &activity.repo)),
+                        );
+
+                        // Gitea users/username/activities only show maximum of 4 activities, so we dig further to get the rest
+                        if count > 0 {
+                            let mut page2 = 1;
+                            // Super slow otherwise
+                            let limit2 = count * 2;
+
+                            'scroller: loop {
+                                let url = format!(
+                                    "{}/repos/{}/commits?sha={}&page={}&limit={}",
+                                    self.api_url,
+                                    activity.repo.full_name,
+                                    last_sha1.clone().unwrap(),
+                                    page2,
+                                    limit2
+                                );
+
+                                let result: Vec<CommitInfo> = self
+                                    .client
+                                    .get(&url)
+                                    .send()
+                                    .await?
+                                    .error_for_status()?
+                                    .json()
+                                    .await?;
+
+                                // Gitea API will return an empty array if the limit + page goes beyond the activity
+                                if result.is_empty() {
+                                    // Should technically never land here
+                                    print!("!");
+                                    io::stdout().flush().ok().expect("Could not flush stdout");
                                     break 'scroller;
                                 }
 
-                                let activity: activity::Activity = commit.into();
+                                for commit in result {
+                                    print!(".");
+                                    io::stdout().flush().ok().expect("Could not flush stdout");
 
-                                if !activities.contains(&activity)
-                                    && activity.username.to_lowercase() == self.username
-                                {
-                                    activities.insert(activity);
-                                    count -= 1;
+                                    if 0 >= count {
+                                        break 'scroller;
+                                    }
+
+                                    let activity: activity::Activity = commit.into();
+
+                                    if !activities.contains(&activity)
+                                        && activity.username.to_lowercase() == self.username
+                                    {
+                                        activities.insert(activity);
+                                        count -= 1;
+                                    }
                                 }
-                            }
 
-                            page2 += 1;
+                                page2 += 1;
+                            }
                         }
                     }
+                    OpType::CreateIssue => {
+                        // The contents when creating an issue might look like this:
+                        // "1|Scrape all happens syncronous"
+                        // The first entry is the issue id, and the second is the issue title.
+                        // Unsure if 1 "|" is the max, or if there exist more
+                        let mut parts = activity.content.split('|');
+                        let issue_id = parts
+                            .next()
+                            .and_then(|id| id.parse::<u64>().ok())
+                            .unwrap_or(0);
+                        let title = parts.next().unwrap_or("");
+
+                        if issue_id == 0 {
+                            continue;
+                        }
+
+                        let source_link = activity
+                            .repo
+                            .html_url
+                            .join(&format!("issues/{}", issue_id))
+                            .unwrap();
+
+                        activities.insert(activity::Activity {
+                            op_type: activity.op_type,
+                            date: activity.created,
+                            content: ActivityContent::Issue(activity::Issue {
+                                issue_id,
+                                message: title.to_string(),
+                            }),
+                            username: activity.act_user.username,
+                            email: activity.act_user.email,
+                            source_link,
+                        });
+                    }
+                    _ => {} // The rest are not supported yet
+                            // OpType::CreateRepo => todo!(),
+                            // OpType::RenameRepo => todo!(),
+                            // OpType::StarRepo => todo!(),
+                            // OpType::WatchRepo => todo!(),
+                            // OpType::CreatePullRequest => todo!(),
+                            // OpType::TransferRepo => todo!(),
+                            // OpType::PushTag => todo!(),
+                            // OpType::CommentIssue => todo!(),
+                            // OpType::MergePullRequest => todo!(),
+                            // OpType::CloseIssue => todo!(),
+                            // OpType::ReopenIssue => todo!(),
+                            // OpType::ClosePullRequest => todo!(),
+                            // OpType::ReopenPullRequest => todo!(),
+                            // OpType::DeleteTag => todo!(),
+                            // OpType::DeleteBranch => todo!(),
+                            // OpType::MirrorSyncPush => todo!(),
+                            // OpType::MirrorSyncCreate => todo!(),
+                            // OpType::MirrorSyncDelete => todo!(),
+                            // OpType::ApprovePullRequest => todo!(),
+                            // OpType::RejectPullRequest => todo!(),
+                            // OpType::CommentPull => todo!(),
+                            // OpType::PublishRelease => todo!(),
+                            // OpType::PullReviewDismissed => todo!(),
+                            // OpType::PullRequestReadyForReview => todo!(),
+                            // OpType::AutoMergePullRequest => todo!(),
                 }
             }
 
@@ -430,6 +477,10 @@ impl Hash for activity::Activity {
                 c.sha1.hash(state);
                 c.timestamp.hash(state);
             }
+            ActivityContent::Issue(i) => {
+                i.issue_id.hash(state);
+                i.message.hash(state);
+            }
         };
     }
 }
@@ -437,13 +488,18 @@ impl Hash for activity::Activity {
 impl Eq for activity::Activity {}
 impl PartialEq for activity::Activity {
     fn eq(&self, other: &Self) -> bool {
-        self.op_type == other.op_type
-            && match &self.content {
-                ActivityContent::Commit(c) => match &other.content {
-                    ActivityContent::Commit(oc) => {
-                        c.message == oc.message && c.sha1 == oc.sha1 && c.timestamp == oc.timestamp
-                    }
-                },
+        if self.op_type != other.op_type {
+            return false;
+        }
+
+        match (&self.content, &other.content) {
+            (ActivityContent::Commit(c1), ActivityContent::Commit(c2)) => {
+                c1.message == c2.message && c1.sha1 == c2.sha1 && c1.timestamp == c2.timestamp
             }
+            (ActivityContent::Issue(i1), ActivityContent::Issue(i2)) => {
+                i1.message == i2.message && i1.issue_id == i2.issue_id
+            }
+            _ => false,
+        }
     }
 }
